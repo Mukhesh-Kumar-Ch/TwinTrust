@@ -1,0 +1,57 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Vite / Build
+dist/
+build/
+frontend/dist/
+frontend/build/
+backend/dist/
+backend/build/
+
+# Python
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+pip-wheel-metadata/
+__pypackages__/
+
+# Environment
+.env
+.env.*
+
+# Database and models
+db/*.db
+models/*.joblib
+
+# Logs
+logs/
+*.log
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Test / coverage
+.pytest_cache/
+coverage/
+
+# Misc
+.cache/

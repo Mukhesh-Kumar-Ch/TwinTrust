@@ -1,12 +1,261 @@
 import { useState } from "react";
 
-function Login() {
+function Login({ onLoginSuccess }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordFocusTime, setPasswordFocusTime] = useState(null);
+  const [typingStartTime, setTypingStartTime] = useState(null);
+  const [typingEndTime, setTypingEndTime] = useState(null);
+  const [backspaceCount, setBackspaceCount] = useState(0);
+  const [keyPressTimestamps, setKeyPressTimestamps] = useState([]);
+
+  function handlePasswordFocus() {
+    if (passwordFocusTime === null) {
+      setPasswordFocusTime(Date.now());
+    }
+  }
+
+  function handleKeyDown(event) {
+    const currentTime = Date.now();
+
+    if (typingStartTime === null) {
+      setTypingStartTime(currentTime);
+    }
+
+    setKeyPressTimestamps((previousTimestamps) => [
+      ...previousTimestamps,
+      currentTime,
+    ]);
+
+    if (event.key === "Backspace") {
+      setBackspaceCount((previousCount) => previousCount + 1);
+    }
+  }
+
+  function handleKeyUp() {
+    setTypingEndTime(Date.now());
+  }
+
+  function handlePasswordClipboard(event) {
+    event.preventDefault();
+    console.warn("Clipboard actions disabled for behavioral authentication");
+  }
+
+  function calculateTotalTypingTime() {
+    if (typingStartTime === null || typingEndTime === null) {
+      return 0;
+    }
+
+    return typingEndTime - typingStartTime;
+  }
+
+  function calculateAverageKeyLatency() {
+    if (keyPressTimestamps.length < 2) {
+      return 0;
+    }
+
+    let totalLatency = 0;
+
+    for (let index = 1; index < keyPressTimestamps.length; index += 1) {
+      totalLatency += keyPressTimestamps[index] - keyPressTimestamps[index - 1];
+    }
+
+    return totalLatency / (keyPressTimestamps.length - 1);
+  }
+
+  function calculateHesitationTime() {
+    if (passwordFocusTime === null || typingStartTime === null) {
+      return 0;
+    }
+
+    return typingStartTime - passwordFocusTime;
+  }
+
+  function createBehavioralData() {
+    const totalTypingTime = calculateTotalTypingTime();
+    const averageKeyLatency = calculateAverageKeyLatency();
+    const hesitationTime = calculateHesitationTime();
+
+    return {
+      keyboardMetrics: {
+        username,
+        totalTypingTime,
+        averageKeyLatency,
+        backspaceCount,
+        keyPressCount: keyPressTimestamps.length,
+        hesitationTime,
+      },
+      sessionMetrics: {
+        loginTimestamp: Date.now(),
+        failedLoginAttempts: 0,
+      },
+      rawTiming: {
+        typingStartTime,
+        typingEndTime,
+        keyPressTimestamps,
+      },
+    };
+  }
+
+  function getStoredBehavioralProfile(profileKey) {
+    const storedProfile = localStorage.getItem(profileKey);
+
+    if (!storedProfile) {
+      return null;
+    }
+
+    return JSON.parse(storedProfile);
+  }
+
+  function calculateDeviationValue(previousValue, currentValue) {
+    return Math.abs(currentValue - previousValue);
+  }
+
+  function createDeviationAnalysis(previousProfile, currentProfile) {
+    return {
+      totalTypingTime: calculateDeviationValue(
+        previousProfile.keyboardMetrics.totalTypingTime,
+        currentProfile.keyboardMetrics.totalTypingTime
+      ),
+      averageKeyLatency: calculateDeviationValue(
+        previousProfile.keyboardMetrics.averageKeyLatency,
+        currentProfile.keyboardMetrics.averageKeyLatency
+      ),
+      backspaceCount: calculateDeviationValue(
+        previousProfile.keyboardMetrics.backspaceCount,
+        currentProfile.keyboardMetrics.backspaceCount
+      ),
+      hesitationTime: calculateDeviationValue(
+        previousProfile.keyboardMetrics.hesitationTime,
+        currentProfile.keyboardMetrics.hesitationTime
+      ),
+    };
+  }
+
+  function getDeviationLevel(metricName, deviationValue) {
+    const thresholds = {
+      totalTypingTime: { small: 500, moderate: 1500 },
+      averageKeyLatency: { small: 50, moderate: 150 },
+      backspaceCount: { small: 1, moderate: 3 },
+      hesitationTime: { small: 300, moderate: 1000 },
+    };
+
+    const metricThresholds = thresholds[metricName];
+
+    if (deviationValue <= metricThresholds.small) {
+      return { level: "small", penalty: 0, note: null };
+    }
+
+    if (deviationValue <= metricThresholds.moderate) {
+      return {
+        level: "moderate",
+        penalty: 15,
+        note: `+ moderate ${metricName} deviation`,
+      };
+    }
+
+    return {
+      level: "large",
+      penalty: 30,
+      note: `+ high ${metricName} deviation`,
+    };
+  }
+
+  function generateTrustEngine(deviationAnalysis) {
+    const deviationEntries = Object.entries(deviationAnalysis);
+    let totalPenalty = 0;
+    const explanationParts = [];
+
+    deviationEntries.forEach(([metricName, deviationValue]) => {
+      const deviationInfo = getDeviationLevel(metricName, deviationValue);
+      totalPenalty += deviationInfo.penalty;
+
+      if (deviationInfo.note) {
+        explanationParts.push(deviationInfo.note);
+      }
+    });
+
+    const trustScore = Math.max(0, 100 - totalPenalty);
+
+    let riskLevel = "LOW";
+
+    if (trustScore < 50) {
+      riskLevel = "HIGH";
+    } else if (trustScore < 80) {
+      riskLevel = "MEDIUM";
+    }
+
+    const explanation =
+      explanationParts.length > 0
+        ? explanationParts.join(" ")
+        : "+ small deviations across typing metrics";
+
+    return {
+      trustScore,
+      riskLevel,
+      explanation,
+    };
+  }
 
   function handleLogin(event) {
     event.preventDefault();
-    console.log({ username, password });
+
+    const trimmedUsername = username.trim();
+
+    if (!trimmedUsername) {
+      return;
+    }
+
+    const behavioralData = createBehavioralData();
+    const currentProfile = behavioralData;
+    const previousProfile = getStoredBehavioralProfile(trimmedUsername);
+    let trustEngineResult = {
+      trustScore: 100,
+      riskLevel: "LOW",
+      explanation: "+ new Behavioral Digital Twin profile created",
+    };
+
+    if (previousProfile) {
+      const deviationAnalysis = createDeviationAnalysis(previousProfile, currentProfile);
+      trustEngineResult = generateTrustEngine(deviationAnalysis);
+
+      console.log("Previous Behavioral Profile:", previousProfile);
+      console.log("Current Behavioral Profile:", currentProfile);
+      console.log("Behavioral Deviation Analysis:", deviationAnalysis);
+      console.log("Trust Score:", trustEngineResult.trustScore);
+      console.log("Risk Level:", trustEngineResult.riskLevel);
+      console.log("Trust Explanation:", trustEngineResult.explanation);
+    } else {
+      console.log("No previous profile found. Creating new Behavioral Digital Twin profile.");
+      console.log("Current Behavioral Profile:", currentProfile);
+      console.log("Trust Score:", trustEngineResult.trustScore);
+      console.log("Risk Level:", trustEngineResult.riskLevel);
+      console.log("Trust Explanation:", trustEngineResult.explanation);
+    }
+
+    localStorage.setItem(
+      trimmedUsername,
+      JSON.stringify({
+        ...currentProfile,
+        trustMetrics: trustEngineResult,
+      })
+    );
+
+    console.log("TwinTrust behavioralData:", behavioralData);
+
+    if (onLoginSuccess) {
+      onLoginSuccess({
+        trustScore: trustEngineResult.trustScore,
+        riskLevel: trustEngineResult.riskLevel,
+        behavioralData: {
+          ...currentProfile,
+          trustMetrics: trustEngineResult,
+          deviationAnalysis: previousProfile
+            ? createDeviationAnalysis(previousProfile, currentProfile)
+            : null,
+        },
+      });
+    }
   }
 
   return (
@@ -53,6 +302,9 @@ function Login() {
             placeholder="Username"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
+            onPaste={handlePasswordClipboard}
+            onCopy={handlePasswordClipboard}
+            onCut={handlePasswordClipboard}
             className="
             w-full
             p-3
@@ -71,6 +323,12 @@ function Login() {
             placeholder="Password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            onFocus={handlePasswordFocus}
+            onKeyDown={handleKeyDown}
+            onKeyUp={handleKeyUp}
+            onPaste={handlePasswordClipboard}
+            onCopy={handlePasswordClipboard}
+            onCut={handlePasswordClipboard}
             className="
             w-full
             p-3
